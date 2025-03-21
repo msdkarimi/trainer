@@ -1,4 +1,4 @@
-from base_trainer import BaseTrainer
+from trainer.base_trainer import BaseTrainer
 import torch
 
 

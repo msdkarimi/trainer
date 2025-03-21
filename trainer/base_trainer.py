@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Literal
-from utils import AverageMeter
+from util.utils import AverageMeter
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
