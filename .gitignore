@@ -4,3 +4,5 @@
 main.py
 model.py
 tst.py
+__pycache__/
+
