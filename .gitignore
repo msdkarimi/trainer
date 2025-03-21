@@ -1,6 +1,7 @@
 .idea
 /data
 /checkpoints_dir
+/pretrained/vae_f_8.ckpt
 main.py
 model.py
 tst.py
