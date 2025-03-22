@@ -38,9 +38,9 @@ class ImageLogger(object):
                 Image.fromarray(grid).save(path)
 
         if self.log_on == 'step' and  step % self.frequency == 0:
-            _train_phase = model.unet.training
+            _train_phase = model.model.training
             if _train_phase:
-                model.unet.eval()
+                model.model.eval()
             _log_images()
             if _train_phase:
-                model.unet.train()
+                model.model.train()

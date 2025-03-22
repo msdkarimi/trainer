@@ -11,7 +11,6 @@ def get_data_loaders(root, batch_size):
 
     val_dataset = DareDataset(root, 'validation', transform=image_transform)
     val_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    test_dataset = DareDataset(root, 'test', transform=image_transform)
 
     return train_data_loader, val_data_loader
 
@@ -28,6 +27,7 @@ def get_optimizer(model, name=None, lr=None, momentum=None, weight_decay=None):
 def get_criterion(prediction, target, loss_type='l2'):
     if loss_type == 'l2':
         loss = torch.nn.functional.mse_loss(prediction, target)
+
     elif loss_type == 'l1':
         loss = (target - prediction).abs()
     else:

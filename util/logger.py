@@ -5,6 +5,7 @@ from termcolor import colored
 from datetime import datetime
 from util.image_logger import ImageLogger
 from torch.utils.tensorboard import SummaryWriter
+from configs.train_model_config import NUM_ITER
 
 class CustomLogger(object):
     def __init__(self, log_dir , log_image_kwargs, log_on, frequency, logger_name='', rescale=True, clamp=True):
@@ -13,16 +14,20 @@ class CustomLogger(object):
         self.writer = SummaryWriter(f'{log_dir}/{_run_name}/run')
 
     def __call__(self, logger, log_dict=None, batch=None, step=None):
-        if hasattr(logger, '__self__'):
+        if batch is not None:
             self.image_logger(logger, batch, step)
         else:
-            self._log_dict(log_dict.update({'step': step}))
+            log_dict.update({'step': f'{step:.1e}\t', 'progress(%)': f'{(step/NUM_ITER)*100:.3e}'})
+            self._log_dict(log_dict, step)
 
-    def _log_dict(self, log_dict):
+    def _log_dict(self, log_dict, step):
         if log_dict is not None:
-            self.model_logger.info(
-                '\t'.join(f'{k}:{log_dict[k]}' for k in log_dict)
-            )
+            if step % (self.image_logger.frequency//5) == 0:
+                self.model_logger.info(
+                    '\t'.join(f'{k}:{log_dict[k]}' for k in log_dict)
+                )
+    def info (self, *args, **kwargs):
+        self.model_logger.info(*args, **kwargs)
 
 
 

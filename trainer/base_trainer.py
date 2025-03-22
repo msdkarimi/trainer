@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Literal, Callable
-from util.utils import AverageMeter
+from util.utils import AverageMeter, compute_grad_param_norms
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -47,7 +47,7 @@ class BaseTrainer(ABC):
         self.load_checkpoint()
     @staticmethod
     def _update_metrics_to_monitor(metrics):
-        return { metric: AverageMeter for metric in metrics}
+        return { metric: AverageMeter() for metric in metrics}
 
     def take_one_step(self,args, kwargs):
         """
@@ -57,24 +57,33 @@ class BaseTrainer(ABC):
         """
 
         model_output = self.forward_pass(args)
-        losses = self.compute_loss(model_output, kwargs)
-        self._update_meters(losses)
-        if self.model.training:
-            self.backpropagation(losses)
-            if self.lr_scheduler is not None: self.lr_scheduler.step()
-        if self.logger is not None: self.logger(losses)
+        loss = self.compute_loss(model_output, kwargs['target_noise'])
 
-    def _update_meters(self, losses):
-        for _loss in self.metrics_to_monitor:
-            self.metrics_to_monitor[_loss].update(losses[_loss].item())
+        if self.model.training:
+            self.backpropagation(loss)
+            self._update_meters(loss)
+        # if self.logger is not None: self.logger(losse)
+
+    def _update_meters(self, loss):
+        grad_norm, param_norm = compute_grad_param_norms(self.model)
+        lr = self.optimizer.param_groups[0]['lr']
+        for metric in self.metrics_to_monitor:
+            if metric == 'train_loss':
+                self.metrics_to_monitor[metric].update(loss.item())
+            elif metric == 'grad_norm':
+                self.metrics_to_monitor[metric].update(grad_norm)
+            elif metric == 'param_norm':
+                self.metrics_to_monitor[metric].update(param_norm)
+            elif metric == 'lr':
+                self.metrics_to_monitor[metric].update(lr)
+
 
     def forward_pass(self, args, **kwargs):
         return self.model(*args, **kwargs)
 
-    def backpropagation(self, losses):
-        _loss = losses['loss']
+    def backpropagation(self, loss):
         self.optimizer.zero_grad()
-        _loss.backward()
+        loss.backward()
         self.optimizer.step()
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
@@ -83,7 +92,7 @@ class BaseTrainer(ABC):
 
 
 
-    def compute_loss(self, predictions: torch.Tensor, targets: torch.Tensor):
+    def compute_loss(self, predictions, targets):
         return self.criterion(predictions, targets)
 
     def validate(self,):
@@ -91,19 +100,21 @@ class BaseTrainer(ABC):
     def _log(self, batch):
         if self.logger is not None:
             log_dict = {}
-            lr = self.optimizer.param_groups[0]['lr']
-            grad_norm = self.grad_norm_meter.avg
-            param_norm = self.param_norm_meter.avg
+            # lr = self.optimizer.param_groups[0]['lr']
+            # grad_norm = self.grad_norm_meter.avg
+            # param_norm = self.param_norm_meter.avg
+            # grad_norm = self.metrics_to_monitor['grad_norm'].avg
+            # param_norm = self.metrics_to_monitor['param_norm'].avg
 
 
             log_dict.update({'step':f"{self.num_iter_init}"})
-            log_dict.update({'lr':f"{lr}"})
-            log_dict.update({key:self.metrics_to_monitor[key].avg for key in self.metrics_to_monitor})
-            log_dict.update({'grad_norm': f"{grad_norm:.5f}"})
-            log_dict.update({'param_norm': f"{param_norm:.5f}"})
-            log_dict.update({'mem' : f'{(torch.cuda.max_memory_allocated() / (1024.0 ** 3)):.2f}'})
+            # log_dict.update({'lr':f"{lr}"})
+            log_dict.update({key:f'{self.metrics_to_monitor[key].avg:.3e}' for key in self.metrics_to_monitor if 'val' not in key})
+            # log_dict.update({'grad_norm': f"{grad_norm:.5f}"})
+            # log_dict.update({'param_norm': f"{param_norm:.5f}"})
+            log_dict.update({'mem' : f'{(torch.cuda.max_memory_allocated() / (1024.0 ** 3)):.2f}GB'})
 
-            self.logger(self, batch=batch, step=self.num_iter_init)
+            self.logger(self, self, batch=batch, step=self.num_iter_init)
             self.logger(self, log_dict=log_dict, step=self.num_iter_init)
 
             for key, meter in self.metrics_to_monitor.items():
@@ -134,7 +145,7 @@ class BaseTrainer(ABC):
         :param x: a dict
         :return: input, gts
         """
-        _input = set()
+        _input = list()
         _gt = dict()
 
         for key in x:
@@ -142,7 +153,7 @@ class BaseTrainer(ABC):
                 _i = x[key]
                 if type(_i) == torch.Tensor:
                     _i = self.push_to_device(_i)
-                _input.add(_i)
+                _input.append(_i)
             else:
                 _i = x[key]
                 if type(_i) == torch.Tensor:
@@ -173,12 +184,9 @@ class BaseTrainer(ABC):
         while self.num_iter_init <= self.num_iter:
             try:
                 batch = next(iter(_data))
-                batch = {'input': batch[0], 'gt': batch[1]}
             except StopIteration:
                 _data = _reinit
                 batch = next(iter(_data))
-                batch = {'input': batch[0], 'gt': batch[1]}
-
             inputs, gts = self.separate_input_from_gt(batch)
             gts.update(**kwargs)
             self.take_one_step(inputs, gts)
