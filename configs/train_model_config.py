@@ -1,8 +1,52 @@
 from ml_collections import ConfigDict
 # __all__ = ['get_all_config', 'get_config_trainer']
-BATCH_SIZE = 1
+BATCH_SIZE = 64
+NUM_ITER = 5e5
+BASE_LR = 3e-4
 
 
+
+
+def get_log_image_config():
+    log_image_config = ConfigDict(
+    {
+        'n_row': 2, 'sample': True,
+        'ddim_steps': None, 'ddim_eta': 1.,
+        'plot_reconstruction_rows': True, 'plot_denoise_rows': True,
+        'plot_progressive_rows': False, 'plot_diffusion_rows': True, 'return_input': True
+    })
+    return log_image_config
+
+def get_image_logger_config():
+    image_logger_config = ConfigDict()
+    return image_logger_config
+
+
+
+
+def get_trainer_config():
+    trainer_config = ConfigDict()
+    trainer_config.num_iter = NUM_ITER
+    trainer_config.iter_type = 'step'
+    trainer_config.log_every = 1000 # this interval is for validation,
+                                    # other logs intervals like image logger and model logger interval
+                                    # could be a multiplication of this parameter.
+    trainer_config.metrics_to_monitor = ['train_loss_step', 'train_loss_avg', 'val_loss', 'grad_norm', 'param_norm', 'lr', ]
+    trainer_config.checkpointing_dir = 'unet_checkpoints'
+    return trainer_config
+
+
+
+
+
+
+def get_optimizer_config():
+    optimizer_config = ConfigDict()
+    optimizer_config.name = 'Adam'
+    optimizer_config.lr = BASE_LR
+    optimizer_config.momentum = None
+    optimizer_config.weight_decay = 0.0
+    return optimizer_config
 
 def get_latent_diffusion_config():
     latent_diffusion_configs = ConfigDict()
@@ -10,7 +54,7 @@ def get_latent_diffusion_config():
     latent_diffusion_configs.use_spatial_transformer = False
     latent_diffusion_configs.model_logger_every = 100
     latent_diffusion_configs.diffusion_logger_every = 50
-    latent_diffusion_configs.lr_anneal_steps = 5e5
+    latent_diffusion_configs.lr_anneal_steps = NUM_ITER
     return latent_diffusion_configs
 
 

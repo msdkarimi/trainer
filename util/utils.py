@@ -328,4 +328,3 @@ def checkpoint(func, inputs, params, flag):
     #     return CheckpointFunction.apply(func, len(inputs), *args)
     # else:
     return func(*inputs)
-

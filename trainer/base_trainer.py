@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, Literal
+from typing import Tuple, Literal, Callable
 from util.utils import AverageMeter
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from configs.train_model_config import get_optimizer_config
 import os
 
 
@@ -11,30 +12,36 @@ class BaseTrainer(ABC):
     @abstractmethod
     def __init__(self, model:nn.Module,
                  dataloaders:Tuple[DataLoader, DataLoader],
-                 optimizer,
-                 criterion,
+                 optimizer: Callable,
+                 criterion: Callable,
+                 lr,
                  num_iter:int=5000,
                  iter_type: Literal['epoch', 'step']='epoch',
                  lr_scheduler=None,
-                 device='cuda',
+                 device='cuda:0',
                  logger=None,
-                 log_every=2,
+                 log_every=1000,
                  metrics_to_monitor=None,
+                 num_iter_resume=0,
                  checkpointing_dir=None
                  ) -> None:
 
         self.device = device
         self.model = self.push_to_device(model)
         self.train_dataloader, self.val_dataloader = dataloaders
-        self.optimizer = optimizer
+        self.optimizer = optimizer(self.model, **get_optimizer_config())
         self.criterion = criterion
         self.num_iter = num_iter
         self.num_iter_init = 0
+        self.lr = lr
+        self.num_iter_resume = num_iter_resume
         self.iter_type = iter_type
         self.lr_scheduler = lr_scheduler
         self.logger = logger
         self.log_every = log_every
         self.metrics_to_monitor = {'loss': AverageMeter()} if metrics_to_monitor is None else self._update_metrics_to_monitor(metrics_to_monitor)
+        self.grad_norm_meter = AverageMeter()
+        self.param_norm_meter = AverageMeter()
         self.checkpointing_dir=checkpointing_dir or 'checkpoints_dir'
         os.makedirs(self.checkpointing_dir, exist_ok=True)
         self.load_checkpoint()
@@ -69,6 +76,11 @@ class BaseTrainer(ABC):
         self.optimizer.zero_grad()
         _loss.backward()
         self.optimizer.step()
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+        else:
+            self.anneal_lr()
+
 
 
     def compute_loss(self, predictions: torch.Tensor, targets: torch.Tensor):
@@ -76,8 +88,34 @@ class BaseTrainer(ABC):
 
     def validate(self,):
         pass
-    def log_model(self,):
-        pass
+    def _log(self, batch):
+        if self.logger is not None:
+            log_dict = {}
+            lr = self.optimizer.param_groups[0]['lr']
+            grad_norm = self.grad_norm_meter.avg
+            param_norm = self.param_norm_meter.avg
+
+
+            log_dict.update({'step':f"{self.num_iter_init}"})
+            log_dict.update({'lr':f"{lr}"})
+            log_dict.update({key:self.metrics_to_monitor[key].avg for key in self.metrics_to_monitor})
+            log_dict.update({'grad_norm': f"{grad_norm:.5f}"})
+            log_dict.update({'param_norm': f"{param_norm:.5f}"})
+            log_dict.update({'mem' : f'{(torch.cuda.max_memory_allocated() / (1024.0 ** 3)):.2f}'})
+
+            self.logger(self, batch=batch, step=self.num_iter_init)
+            self.logger(self, log_dict=log_dict, step=self.num_iter_init)
+
+            for key, meter in self.metrics_to_monitor.items():
+                self.logger.writer.add_scalar(f'train/{key}', meter.avg, self.num_iter_init)
+
+    def anneal_lr(self,):
+        if not self.num_iter:
+            return
+        frac_done = (self.num_iter_init + self.num_iter_resume) / self.num_iter
+        lr = self.lr * (1 - frac_done)
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = lr
 
     def __call__(self,**kwargs):
         if self.iter_type=='epoch':
@@ -145,6 +183,7 @@ class BaseTrainer(ABC):
             gts.update(**kwargs)
             self.take_one_step(inputs, gts)
             self.num_iter_init += 1
+            self._log(batch)
 
     def checkpointing(self, just_weights=False, name=''):
         _dir = self.checkpointing_dir
