@@ -1,7 +1,8 @@
 .idea
 /data
 /checkpoints_dir
-/pretrained/vae_f_8.ckpt
+/logger
+pretrained/*
 main.py
 model.py
 tst.py

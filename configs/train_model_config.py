@@ -1,8 +1,8 @@
 from ml_collections import ConfigDict
 # __all__ = ['get_all_config', 'get_config_trainer']
-BATCH_SIZE = 1
+BATCH_SIZE = 4
 NUM_ITER = 5e5
-BASE_LR = 3e-4
+BASE_LR = 7e-5
 
 
 
@@ -37,6 +37,8 @@ def get_trainer_config(input_config=None):
                                     # could be a multiplication of this parameter.
     trainer_config.metrics_to_monitor = ['train_loss', 'val_loss', 'grad_norm', 'param_norm', 'lr']
     trainer_config.checkpointing_dir = 'unet_checkpoints'
+    trainer_config.diffusion_logger_every = 50
+
     return trainer_config
 
 
